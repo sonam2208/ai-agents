@@ -1,5 +1,3 @@
-
-
 import os
 from dotenv import load_dotenv
 
@@ -11,17 +9,21 @@ from azure.ai.agents.models import (
     ListSortOrder
 )
 from azure.identity import DefaultAzureCredential
-from azure.search.documents import SearchClient
 
 # Clear console
 os.system('cls' if os.name == 'nt' else 'clear')
 
 # Load env variables
 load_dotenv()
-project_endpoint = os.getenv("https://agentic-ai-training-batch2.openai.azure.com/") #PROJECT_ENDPOINT
-model_deployment = os.getenv("gpt-4o")
-search_endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
-search_index = os.getenv("AZURE_SEARCH_INDEX")
+project_endpoint = os.getenv("PROJECT_ENDPOINT")
+model_deployment = os.getenv("MODEL_DEPLOYMENT_NAME")
+
+# ----------------------------------
+# File-based RAG helper
+# ----------------------------------
+def load_legal_references():
+    with open("legal_refs.txt", "r", encoding="utf-8") as f:
+        return f.read()
 
 # Connect to Agents Client
 agents_client = AgentsClient(
@@ -32,36 +34,23 @@ agents_client = AgentsClient(
     ),
 )
 
-# 🔍 Azure AI Search client (RAG)
-search_client = SearchClient(
-    endpoint=search_endpoint,
-    index_name=search_index,
-    credential=DefaultAzureCredential()
-)
-
-# -------------------------------
-# RAG TOOL FUNCTION
-# -------------------------------
-def retrieve_legal_references(query: str) -> str:
-    """
-    Retrieves relevant legal or regulatory references from Azure AI Search
-    """
-    results = search_client.search(
-        search_text=query,
-        top=5
-    )
-
-    documents = []
-    for result in results:
-        documents.append(result["content"])
-
-    return "\n\n".join(documents)
-
-
 with agents_client:
 
     # -----------------------------
-    # Compliance Risk Agent
+    # Agent 1: Clause Classification
+    # -----------------------------
+    clause_agent = agents_client.create_agent(
+        model=model_deployment,
+        name="clause_classification_agent",
+        instructions="""
+Identify and classify clauses in the legal document.
+Examples: Termination, Liability, Data Privacy, Confidentiality.
+Return concise results.
+"""
+    )
+
+    # -----------------------------
+    # Agent 2: Compliance Risk
     # -----------------------------
     compliance_agent = agents_client.create_agent(
         model=model_deployment,
@@ -70,25 +59,12 @@ with agents_client:
 Assess legal compliance risk in the document.
 Return:
 - Risk Level (High / Medium / Low)
-- Short explanation
+- Brief explanation
 """
     )
 
     # -----------------------------
-    # Clause Classification Agent
-    # -----------------------------
-    clause_agent = agents_client.create_agent(
-        model=model_deployment,
-        name="clause_classification_agent",
-        instructions="""
-Identify and classify clauses:
-Termination, Liability, Data Privacy, Confidentiality, Payment.
-Return concise results.
-"""
-    )
-
-    # -----------------------------
-    # Legal Complexity Agent
+    # Agent 3: Legal Complexity
     # -----------------------------
     complexity_agent = agents_client.create_agent(
         model=model_deployment,
@@ -101,31 +77,32 @@ Provide short justification.
     )
 
     # -----------------------------
-    # 🔍 RAG Retrieval Agent
+    # Agent 4: File-Based RAG Agent
     # -----------------------------
     rag_agent = agents_client.create_agent(
         model=model_deployment,
         name="legal_rag_agent",
         instructions="""
-Retrieve relevant laws, regulations, or precedents
-based on the provided legal document.
-Return only grounded reference text.
+You are a retrieval agent.
+Use the provided legal references to support analysis.
+Return only relevant reference text.
+Do not interpret or summarize.
 """
     )
 
     # -----------------------------
     # Connected Agent Tools
     # -----------------------------
+    clause_tool = ConnectedAgentTool(
+        id=clause_agent.id,
+        name="clause_classification_agent",
+        description="Identifies legal clauses"
+    )
+
     compliance_tool = ConnectedAgentTool(
         id=compliance_agent.id,
         name="compliance_risk_agent",
         description="Evaluates compliance risk"
-    )
-
-    clause_tool = ConnectedAgentTool(
-        id=clause_agent.id,
-        name="clause_classification_agent",
-        description="Classifies legal clauses"
     )
 
     complexity_tool = ConnectedAgentTool(
@@ -137,11 +114,11 @@ Return only grounded reference text.
     rag_tool = ConnectedAgentTool(
         id=rag_agent.id,
         name="legal_rag_agent",
-        description="Retrieves grounded legal references"
+        description="Retrieves legal references from file"
     )
 
     # -----------------------------
-    # Orchestrator Agent (WITH RAG)
+    # Orchestrator Agent (Primary)
     # -----------------------------
     legal_orchestrator = agents_client.create_agent(
         model=model_deployment,
@@ -153,12 +130,12 @@ Steps:
 1. Identify clause types
 2. Assess compliance risk
 3. Estimate legal complexity
-4. Retrieve relevant legal references using RAG
-5. Produce a grounded summary with references
+4. Use retrieved legal references
+5. Produce a grounded legal summary
 
 Rules:
-- Do NOT invent laws
-- Cite retrieved references explicitly
+- Base conclusions strictly on document + references
+- Do not invent laws
 """,
         tools=[
             clause_tool.definitions[0],
@@ -169,20 +146,29 @@ Rules:
     )
 
     # -----------------------------
-    # Run the Review
+    # Run the Legal Review
     # -----------------------------
     print("Creating agent thread...")
     thread = agents_client.threads.create()
 
-    legal_text = input("\nPaste the legal document text:\n\n")
+    with open("legal_document.txt", "r", encoding="utf-8") as f:
+        legal_doc = f.read()
+
+    legal_refs = load_legal_references()
 
     agents_client.messages.create(
         thread_id=thread.id,
         role=MessageRole.USER,
-        content=legal_text
+        content=f"""
+Legal Document:
+{legal_doc}
+
+Retrieved Legal References:
+{legal_refs}
+"""
     )
 
-    print("\nProcessing legal document with RAG...\n")
+    print("\nProcessing legal document with file-based RAG...\n")
 
     run = agents_client.runs.create_and_process(
         thread_id=thread.id,
@@ -206,8 +192,8 @@ Rules:
     # Clean up
     # -----------------------------
     agents_client.delete_agent(legal_orchestrator.id)
-    agents_client.delete_agent(compliance_agent.id)
     agents_client.delete_agent(clause_agent.id)
+    agents_client.delete_agent(compliance_agent.id)
     agents_client.delete_agent(complexity_agent.id)
     agents_client.delete_agent(rag_agent.id)
 
