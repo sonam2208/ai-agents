@@ -1,1 +1,10 @@
+SERVICE AGREEMENT
+
+This Agreement may be terminated by either party at any time without prior written notice.
+
+The Company shall not be liable for any indirect, incidental, or consequential damages arising from the use of the service.
+
+The Company may collect, store, and process user personal data for service improvement purposes.
+
+The Agreement does not specify any data retention period or user consent mechanism.
 
