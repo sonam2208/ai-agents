@@ -1,1 +1,8 @@
+GDPR Article 5:
+Personal data shall be processed lawfully, fairly, and transparently.
 
+Indian Contract Act Section 73:
+Compensation is payable for loss or damage caused by breach of contract.
+
+GDPR Article 6:
+Processing shall be lawful only if at least one legal basis applies.
