@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# Add references
+# Azure Agent SDK imports
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import (
     ConnectedAgentTool,
@@ -13,19 +13,19 @@ from azure.identity import DefaultAzureCredential
 # Clear console
 os.system('cls' if os.name == 'nt' else 'clear')
 
-# Load env variables
+# Load environment variables
 load_dotenv()
 project_endpoint = os.getenv("PROJECT_ENDPOINT")
 model_deployment = os.getenv("MODEL_DEPLOYMENT_NAME")
 
-# ----------------------------------
+# -----------------------------
 # File-based RAG helper
-# ----------------------------------
+# -----------------------------
 def load_legal_references():
     with open("legal_refs.txt", "r", encoding="utf-8") as f:
         return f.read()
 
-# Connect to Agents Client
+# Connect to Azure AI Foundry Agents Client
 agents_client = AgentsClient(
     endpoint=project_endpoint,
     credential=DefaultAzureCredential(
@@ -45,7 +45,7 @@ with agents_client:
         instructions="""
 Identify and classify clauses in the legal document.
 Examples: Termination, Liability, Data Privacy, Confidentiality.
-Return concise results.
+Return concise bullet points.
 """
     )
 
@@ -59,7 +59,7 @@ Return concise results.
 Assess legal compliance risk in the document.
 Return:
 - Risk Level (High / Medium / Low)
-- Brief explanation
+- Short explanation
 """
     )
 
@@ -70,9 +70,10 @@ Return:
         model=model_deployment,
         name="legal_complexity_agent",
         instructions="""
-Estimate legal review complexity:
+Estimate legal review complexity.
+Use:
 Low / Medium / High
-Provide short justification.
+Provide brief justification.
 """
     )
 
@@ -118,7 +119,7 @@ Do not interpret or summarize.
     )
 
     # -----------------------------
-    # Orchestrator Agent (Primary)
+    # Orchestrator Agent
     # -----------------------------
     legal_orchestrator = agents_client.create_agent(
         model=model_deployment,
@@ -135,7 +136,7 @@ Steps:
 
 Rules:
 - Base conclusions strictly on document + references
-- Do not invent laws
+- Do not invent laws or clauses
 """,
         tools=[
             clause_tool.definitions[0],
@@ -146,7 +147,7 @@ Rules:
     )
 
     # -----------------------------
-    # Run the Legal Review
+    # Run the Review
     # -----------------------------
     print("Creating agent thread...")
     thread = agents_client.threads.create()
